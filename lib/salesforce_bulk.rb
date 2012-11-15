@@ -77,5 +77,8 @@ module SalesforceBulk
       end
     end
 
+    def debug      ; @connection.debug      ; end
+    def debug=(io) ; @connection.debug = io ; end
+
   end  # End class
 end # End module

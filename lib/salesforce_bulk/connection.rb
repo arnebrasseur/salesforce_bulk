@@ -5,7 +5,7 @@ module SalesforceBulk
 
     include HTTParty
 
-    attr_accessor :username, :password, :session_id, :server_url, :instance, :api_version, :login_host, :instance_host
+    attr_accessor :username, :password, :session_id, :server_url, :instance, :api_version, :login_host, :instance_host, :debug
 
     def initialize(username, password, api_version, in_sandbox = false)
       @username = username
@@ -113,23 +113,19 @@ module SalesforceBulk
     ## debug methods
     def _debug_request(verb, path, headers, xml = nil)
       return unless @debug
-      _debug_io << "************** #{verb} #{path} #{headers.inspect}\n"
-      _debug_io << "#{_xml_pp(xml) rescue xml}\n**************\n" if xml
+      @debug << "************** #{verb} #{path} #{headers.inspect}\n"
+      @debug << "#{_xml_pp(xml) rescue xml}\n**************\n" if xml
     end
 
     def _debug_response(response)
       return unless @debug
-      _debug_io << (_xml_pp(response.body) rescue response.body) << "\n"
+      @debug << (_xml_pp(response.body) rescue response.body) << "\n"
     end
 
     def _xml_pp(xml)
       format = REXML::Formatters::Pretty.new
       format.compact = true
       format.write(REXML::Document.new(xml).root,"")
-    end
-
-    def _debug_io
-      STDERR
     end
     ###
   end
