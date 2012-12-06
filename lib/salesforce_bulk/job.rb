@@ -1,25 +1,26 @@
+require 'salesforce_bulk/job/job_info'
+require 'salesforce_bulk/job/batch_info'
+
+
 module SalesforceBulk
-
   class Job
+    XML_HEADER = '<?xml version="1.0" encoding="utf-8" ?>'
 
-    attr :result
+    attr_accessor :result
+    attr_reader   :job_info
 
-    def initialize(operation, sobject, records, external_field, connection)
-
-      @operation = operation
-      @sobject = sobject
+    def initialize(operation, sobject, external_field, connection)
+      @operation      = operation
+      @sobject        = sobject
       @external_field = external_field
-      @records = records
-      @connection = connection
-      @XML_HEADER = '<?xml version="1.0" encoding="utf-8" ?>'
-
-      # @result = {"errors" => [], "success" => nil, "records" => [], "raw" => nil, "message" => 'The job has been queued.'}
-      @result = JobResult.new
-
+      @connection     = connection
+      @job_info       = nil
+      @batch_info     = nil
+      @result         = JobResult.new
     end
 
     def create_job()
-      xml = "#{@XML_HEADER}<jobInfo xmlns=\"http://www.force.com/2009/06/asyncapi/dataload\">"
+      xml = "#{XML_HEADER}<jobInfo xmlns=\"http://www.force.com/2009/06/asyncapi/dataload\">"
       xml += "<operation>#{@operation}</operation>"
       xml += "<object>#{@sobject}</object>"
       if !@external_field.nil? # This only happens on upsert
@@ -31,39 +32,36 @@ module SalesforceBulk
       path = "job"
       headers = Hash['Content-Type' => 'application/xml; charset=utf-8']
 
-      response = @connection.post_xml(nil, path, xml, headers)
-
-      @job_id = response['jobInfo']['id']
+      post_job(path, xml, headers)
     end
 
     def close_job()
-      xml = "#{@XML_HEADER}<jobInfo xmlns=\"http://www.force.com/2009/06/asyncapi/dataload\">"
+      xml = "#{XML_HEADER}<jobInfo xmlns=\"http://www.force.com/2009/06/asyncapi/dataload\">"
       xml += "<state>Closed</state>"
       xml += "</jobInfo>"
 
-      path = "job/#{@job_id}"
+      path = "job/#{job_id}"
       headers = Hash['Content-Type' => 'application/xml; charset=utf-8']
 
-      response = @connection.post_xml(nil, path, xml, headers)
-
-      #job_id = response_parsed['id'][0]
+      post_job(path, xml, headers)
     end
 
-    def add_query
-      path = "job/#{@job_id}/batch/"
+
+    def add_query(records)
+      path = "job/#{job_id}/batch/"
       headers = Hash["Content-Type" => "text/csv; charset=UTF-8"]
       
-      response = @connection.post_xml(nil, path, @records, headers)
+      response = @connection.post_xml(nil, path, records, headers)
 
-      @batch_id = response_parsed['batchInfo']['id']
+      post_batch(path, records, headers)
     end
 
-    def add_batch()
-      keys = @records.first.keys
+    def add_batch(records)
+      keys = records.first.keys
       
       output_csv = keys.to_csv
 
-      @records.each do |r|
+      records.each do |r|
         fields = Array.new
         keys.each do |k|
           fields.push(r[k])
@@ -73,32 +71,22 @@ module SalesforceBulk
         output_csv += row_csv
       end
 
-      path = "job/#{@job_id}/batch/"
+      path = "job/#{job_id}/batch/"
       headers = Hash["Content-Type" => "text/csv; charset=UTF-8"]
-      
-      response = @connection.post_xml(nil, path, output_csv, headers)
 
-      @batch_id = response['batchInfo']['id'][0]
+      post_batch(path, output_csv, headers)
     end
 
     def check_batch_status()
-      path = "job/#{@job_id}/batch/#{@batch_id}"
+      path = "job/#{job_id}/batch/#{@batch_id}"
       headers = Hash.new
 
       response = @connection.get_request(nil, path, headers)
-
-      begin
-        #puts "check: #{response.inspect}\n"
-        response['jobInfo']
-      rescue Exception => e
-        #puts "check: #{response.inspect}\n"
-
-        nil
-      end
+      @batch_info = BatchInfo.new(response['batchInfoList'])
     end
 
     def get_batch_result()
-      path = "job/#{@job_id}/batch/#{@batch_id}/result"
+      path = "job/#{job_id}/batch/#{@batch_id}/result"
       headers = Hash["Content-Type" => "text/xml; charset=UTF-8"]
 
       response = @connection.get_request(nil, path, headers)
@@ -106,12 +94,11 @@ module SalesforceBulk
       if(@operation == "query") # The query op requires us to do another request to get the results
         result_id = response['jobInfo']["result"]
 
-        path = "job/#{@job_id}/batch/#{@batch_id}/result/#{result_id}"
+        path = "job/#{job_id}/batch/#{@batch_id}/result/#{result_id}"
         headers = Hash.new
         headers = Hash["Content-Type" => "text/xml; charset=UTF-8"]
         
         response = @connection.get_request(nil, path, headers)
-
       end
 
       parse_results response
@@ -139,7 +126,30 @@ module SalesforceBulk
       end
 
       @result.message = "The job has been closed."
+    end
 
+    def job_id
+      job_info.job_id
+    end
+
+    def batch_id
+      batch_info.batch_id
+    end
+
+    private
+
+    def post_batch(path, payload, headers)
+      response = @connection.post_xml(nil, path, payload, headers)
+      @connection.raise_if_has_errors( response )
+      
+      @batch_info = BatchInfo.new(response)
+    end     
+
+    def post_job(path, xml, headers)
+      response = @connection.post_xml(nil, path, xml, headers)
+      @connection.raise_if_has_errors( response )
+      
+      @job_info = JobInfo.new(response)
     end
 
   end

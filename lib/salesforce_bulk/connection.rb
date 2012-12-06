@@ -114,18 +114,22 @@ module SalesforceBulk
     def _debug_request(verb, path, headers, xml = nil)
       return unless @debug
       @debug << "************** #{verb} #{path} #{headers.inspect}\n"
-      @debug << "#{_xml_pp(xml) rescue xml}\n**************\n" if xml
+      @debug << _xml_pp(xml) << "\n**************\n" if xml
     end
 
     def _debug_response(response)
       return unless @debug
-      @debug << (_xml_pp(response.body) rescue response.body) << "\n"
+      @debug << _xml_pp(response.body) << "\n"
     end
 
     def _xml_pp(xml)
-      format = REXML::Formatters::Pretty.new
-      format.compact = true
-      format.write(REXML::Document.new(xml).root,"")
+      begin
+        format = REXML::Formatters::Pretty.new
+        format.compact = true
+        format.write(REXML::Document.new(xml).root,"")
+      rescue Object => e
+        xml
+      end
     end
     ###
   end

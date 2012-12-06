@@ -14,18 +14,22 @@ module SalesforceBulk
     end
 
     def upsert(sobject, records, external_field, wait=false)
+      return if records.empty?
       self.do_operation('upsert', sobject, records, external_field, wait)
     end
 
     def update(sobject, records, wait=false)
+      return if records.empty?
       self.do_operation('update', sobject, records, nil, wait)
     end
     
     def create(sobject, records, wait=false)
+      return if records.empty?
       self.do_operation('insert', sobject, records, nil, wait)
     end
 
     def delete(sobject, records, wait=false)
+      return if records.empty?
       self.do_operation('delete', sobject, records, nil, wait)
     end
 
@@ -34,20 +38,19 @@ module SalesforceBulk
     end
 
     def do_operation(operation, sobject, records, external_field, wait=false)
-      job = SalesforceBulk::Job.new(operation, sobject, records, external_field, @connection)
+      job = SalesforceBulk::Job.new(operation, sobject, external_field, @connection)
 
-      # TODO: put this in one function
-      job_id = job.create_job()
+      job.create_job()
       if(operation == "query")
-        batch_id = job.add_query()
+        batch_id = job.add_query( records ).batch_id
       else
-        batch_id = job.add_batch()
+        batch_id = job.add_batch( records ).batch_id
       end
       job.close_job()
 
       if wait or operation == 'query'
         while true
-          state = job.check_batch_status()
+          state = job.check_batch_status().state
           if state != "Queued" && state != "InProgress"
             break
           end
