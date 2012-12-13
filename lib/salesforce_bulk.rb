@@ -1,6 +1,10 @@
 require 'httparty'
 require 'csv'
+
 require 'salesforce_bulk/version'
+require 'salesforce_bulk/xml_templates'
+require 'salesforce_bulk/parser'
+require 'salesforce_bulk/batch'
 require 'salesforce_bulk/job'
 require 'salesforce_bulk/connection'
 
@@ -9,6 +13,7 @@ module SalesforceBulk
   class Api
     SALESFORCE_API_VERSION = '26.0'
 
+    attr_reader :connection
     def initialize(username, password, in_sandbox=false)
       @connection = SalesforceBulk::Connection.new(username, password, SALESFORCE_API_VERSION, in_sandbox)
     end
@@ -37,39 +42,16 @@ module SalesforceBulk
       self.do_operation('query', sobject, query, nil)
     end
 
-    def do_operation(operation, sobject, records, external_field, wait=false)
+    def do_operation(operation, sobject, records_or_query, external_field, wait=false)
       job = SalesforceBulk::Job.new(operation, sobject, external_field, @connection)
 
-      job.create_job()
       if(operation == "query")
-        batch_id = job.add_query( records ).batch_id
+        job.add_query( records_or_query )
       else
-        batch_id = job.add_batch( records ).batch_id
-      end
-      job.close_job()
-
-      if wait or operation == 'query'
-        while true
-          state = job.check_batch_status().state
-          if state != "Queued" && state != "InProgress"
-            break
-          end
-          sleep(2) # wait x seconds and check again
-        end
-        
-        if state == 'Completed'
-          job.get_batch_result()
-          job
-        else
-          job.result.message = "There is an error in your job. The response returned a state of #{state}. Please check your query/parameters and try again."
-          job.result.success = false
-          return job
-
-        end
-      else
-        return job
+        job.add_batch( records_or_query )
       end
 
+      job.execute
     end
 
     def parse_batch_result result

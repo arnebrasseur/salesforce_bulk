@@ -1,9 +1,8 @@
 module SalesforceBulk
 
   class Connection
-    XML_HEADER = '<?xml version="1.0" encoding="utf-8" ?>'
-
     include HTTParty
+    parser SalesforceBulk::Parser
 
     attr_accessor :username, :password, :session_id, :server_url, :instance, :api_version, :login_host, :instance_host, :debug
 
@@ -17,21 +16,10 @@ module SalesforceBulk
     end
 
     def login
-      xml = XML_HEADER.dup
-      xml << "<env:Envelope xmlns:xsd=\"http://www.w3.org/2001/XMLSchema\""
-      xml << "    xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\""
-      xml << "    xmlns:env=\"http://schemas.xmlsoap.org/soap/envelope/\">"
-      xml << "  <env:Body>"
-      xml << "    <n1:login xmlns:n1=\"urn:partner.soap.sforce.com\">"
-      xml << "      <n1:username>#{@username}</n1:username>"
-      xml << "      <n1:password>#{@password}</n1:password>"
-      xml << "    </n1:login>"
-      xml << "  </env:Body>"
-      xml << "</env:Envelope>"
-      
+      xml = XmlTemplates.login( @username, @password )
       headers = {'Content-Type' => 'text/xml; charset=utf-8', 'SOAPAction' => 'login'}
 
-      response = post_xml(login_host, login_path, xml, headers)
+      response = do_post!(login_host, login_path, xml, headers)
       raise_if_has_errors(response)
 
       @session_id = response['Envelope']['Body']['loginResponse']['result']['sessionId']
@@ -62,15 +50,33 @@ module SalesforceBulk
       end
     end
 
-    def post_xml(host, path, xml, headers)
+    def do_post(path, xml, headers = nil)
+      response = do_post!(nil, path, xml, headers)
+      raise_if_has_errors(response)
+      response
+    end
+
+    def do_post!(host, path, xml, headers = nil)
+      headers ||= default_headers
       path = prefix_path(path) unless host == @login_host
       add_session_header(headers, host)
       perform(:post, path, :body => xml, :headers => headers, :base_uri => base_uri(host))
     end
 
-    def get_request(host, path, headers)
+    def do_get(path, headers = nil)
+      response = do_get!(nil, path, headers)
+      raise_if_has_errors(response)
+      response
+    end
+
+    def do_get!(host, path, headers = nil)
+      headers ||= default_headers
       add_session_header(headers, host)
       perform(:get, prefix_path(path), :headers => headers, :base_uri => base_uri(host))
+    end
+
+    def default_headers
+      { 'Content-Type' => 'application/xml; charset=utf-8' }
     end
 
     private

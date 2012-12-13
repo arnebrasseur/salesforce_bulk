@@ -1,13 +1,10 @@
 require 'salesforce_bulk/job/job_info'
-require 'salesforce_bulk/job/batch_info'
-
 
 module SalesforceBulk
   class Job
-    XML_HEADER = '<?xml version="1.0" encoding="utf-8" ?>'
 
     attr_accessor :result
-    attr_reader   :job_info
+    attr_reader :job_info, :batches, :operation, :sobject, :external_field, :connection
 
     def initialize(operation, sobject, external_field, connection)
       @operation      = operation
@@ -15,164 +12,61 @@ module SalesforceBulk
       @external_field = external_field
       @connection     = connection
       @job_info       = nil
-      @batch_info     = nil
-      @result         = JobResult.new
+      @batches        = []
     end
 
-    def create_job()
-      xml = "#{XML_HEADER}<jobInfo xmlns=\"http://www.force.com/2009/06/asyncapi/dataload\">"
-      xml += "<operation>#{@operation}</operation>"
-      xml += "<object>#{@sobject}</object>"
-      if !@external_field.nil? # This only happens on upsert
-        xml += "<externalIdFieldName>#{@external_field}</externalIdFieldName>"
+    def execute
+      create
+      batches.each( &:execute )
+      close
+
+      unfinished = batches.select {|batch| batch.state == "Queued" || batch.state == "InProgress"}
+      until unfinished.empty?
+        sleep(2)
+        unfinished.each( &:update_status )
+        unfinished = batches.select {|batch| batch.state == "Queued" || batch.state == "InProgress"}
       end
-      xml += "<contentType>CSV</contentType>"
-      xml += "</jobInfo>"
 
-      path = "job"
-      headers = Hash['Content-Type' => 'application/xml; charset=utf-8']
+      batches.each( &:retreive_results )
 
-      post_job(path, xml, headers)
+      self
     end
 
-    def close_job()
-      xml = "#{XML_HEADER}<jobInfo xmlns=\"http://www.force.com/2009/06/asyncapi/dataload\">"
-      xml += "<state>Closed</state>"
-      xml += "</jobInfo>"
-
-      path = "job/#{job_id}"
-      headers = Hash['Content-Type' => 'application/xml; charset=utf-8']
-
-      post_job(path, xml, headers)
+    def create
+      xml = XmlTemplates.create_job( @operation, @sobject, @external_field )
+      post_job( job_path, xml )
     end
 
-
-    def add_query(records)
-      path = "job/#{job_id}/batch/"
-      headers = Hash["Content-Type" => "text/csv; charset=UTF-8"]
-      
-      response = @connection.post_xml(nil, path, records, headers)
-
-      post_batch(path, records, headers)
-    end
+    #def add_query(query)
+    #  post_batch( batch_path, query )
+    #end
 
     def add_batch(records)
-      keys = records.first.keys
-      
-      output_csv = keys.to_csv
-
-      records.each do |r|
-        fields = Array.new
-        keys.each do |k|
-          fields.push(r[k])
-        end
-
-        row_csv = fields.to_csv
-        output_csv += row_csv
-      end
-
-      path = "job/#{job_id}/batch/"
-      headers = Hash["Content-Type" => "text/csv; charset=UTF-8"]
-
-      post_batch(path, output_csv, headers)
+      batches << Batch.new( self, records, connection )
     end
 
-    def check_batch_status()
-      path = "job/#{job_id}/batch/#{@batch_id}"
-      headers = Hash.new
-
-      response = @connection.get_request(nil, path, headers)
-      @batch_info = BatchInfo.new(response['batchInfoList'])
+    def close
+      xml = XmlTemplates.close_job
+      post_job( job_path( job_id ), xml ) 
     end
 
-    def get_batch_result()
-      path = "job/#{job_id}/batch/#{@batch_id}/result"
-      headers = Hash["Content-Type" => "text/xml; charset=UTF-8"]
 
-      response = @connection.get_request(nil, path, headers)
-
-      if(@operation == "query") # The query op requires us to do another request to get the results
-        result_id = response['jobInfo']["result"]
-
-        path = "job/#{job_id}/batch/#{@batch_id}/result/#{result_id}"
-        headers = Hash.new
-        headers = Hash["Content-Type" => "text/xml; charset=UTF-8"]
-        
-        response = @connection.get_request(nil, path, headers)
-      end
-
-      parse_results response
-
-      response = response.lines.to_a[1..-1].join
-      # csvRows = CSV.parse(response, :headers => true)
-    end
-
-    def parse_results response
-      @result.success = true
-      @result.raw = response.body
-      csvRows = CSV.parse(response, :headers => true)
-
-      csvRows.each_with_index  do |row, index|
-        if @operation != "query"
-          row["Created"] = row["Created"] == "true" ? true : false
-          row["Success"] = row["Success"] == "true" ? true : false
-        end
-
-        @result.records.push row
-        if row["Success"] == false
-          @result.success = false 
-          @result.errors.push({"#{index}" => row["Error"]}) if row["Error"]
-        end
-      end
-
-      @result.message = "The job has been closed."
-    end
-
-    def job_id
-      job_info.job_id
-    end
-
-    def batch_id
-      batch_info.batch_id
-    end
+    def job_id ; job_info.job_id ; end
+    def results ; batches.map( &:results ).flatten ; end
 
     private
 
-    def post_batch(path, payload, headers)
-      response = @connection.post_xml(nil, path, payload, headers)
-      @connection.raise_if_has_errors( response )
-      
-      @batch_info = BatchInfo.new(response)
-    end     
+    def job_path( job_id = nil )
+      ['job' , job_id].compact.join('/')
+    end
 
-    def post_job(path, xml, headers)
-      response = @connection.post_xml(nil, path, xml, headers)
-      @connection.raise_if_has_errors( response )
-      
-      @job_info = JobInfo.new(response)
+    def post_job(path, xml, headers = nil)
+      response = @connection.do_post(path, xml, headers)
+      if response['jobInfo']
+        @job_info = JobInfo.new(response)
+      end
+      response
     end
 
   end
-
-  class JobResult
-    attr_writer :errors, :success, :records, :raw, :message
-    attr_reader :errors, :success, :records, :raw, :message
-
-    def initialize
-      @errors = []
-      @success = nil
-      @records = []
-      @raw = nil
-      @message = 'The job has been queued.'
-    end
-
-    def success?
-      @success
-    end
-
-    def has_errors?
-      @errors.count > 0
-    end
-  end
-
 end
