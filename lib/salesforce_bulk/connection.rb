@@ -6,11 +6,11 @@ module SalesforceBulk
 
     attr_accessor :username, :password, :session_id, :server_url, :instance, :api_version, :login_host, :instance_host, :debug
 
-    def initialize(username, password, api_version, in_sandbox = false)
-      @username = username
-      @password = password
+    def initialize(username, password, api_version, login_host)
+      @username    = username
+      @password    = password
       @api_version = api_version
-      @login_host = in_sandbox ? 'login.salesforce.com' : 'test.salesforce.com'
+      @login_host  = login_host
 
       login
     end

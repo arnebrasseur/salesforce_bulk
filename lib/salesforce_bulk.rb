@@ -14,8 +14,8 @@ module SalesforceBulk
     SALESFORCE_API_VERSION = '26.0'
 
     attr_reader :connection
-    def initialize(username, password, in_sandbox=false)
-      @connection = SalesforceBulk::Connection.new(username, password, SALESFORCE_API_VERSION, in_sandbox)
+    def initialize(username, password, login_host = 'login.salesforce.com', version = SALESFORCE_API_VERSION)
+      @connection = SalesforceBulk::Connection.new(username, password, version, login_host)
     end
 
     def upsert(sobject, records, external_field, wait=false)
