@@ -106,9 +106,7 @@ module SalesforceBulk
     end
 
     def add_session_header(headers, host)
-      if host != @login_host # Not login, need to add session id to header
-        headers['X-SFDC-Session'] = @session_id;
-      end
+      headers['X-SFDC-Session'] = @session_id  if  @session_id
     end
 
     def extract_instance(server_url)
