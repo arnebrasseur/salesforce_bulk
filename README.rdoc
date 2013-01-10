@@ -1,5 +1,11 @@
 = salesforce-bulk
 
+==This branch (http://github.com/arnebrasseur/salesforce_bulk)
+
+Differs considerably from the upstream version. It is more OO (separate objects with single responsibilities), HTTP requests and parsing of the response is handled by HTTParty, the code has been made more idiomatic Ruby. Less class variables should make the library easier to use in a multi-account setup.
+
+A start has been made for unit testing with RSpec, something that was absent from the original version.
+
 ==Overview
 
 Salesforce bulk is a simple ruby gem for connecting to and using the Salesforce Bulk API (http://www.salesforce.com/us/developer/docs/api_asynch/index.htm). There are already some gems out there that provide connectivity to the Salesforce SOAP and Rest APIs, if your needs are simple, I recommend using those, specifically raygao's asf-rest-adapter (https://github.com/raygao/asf-rest-adapter) or databasedotcom (https://rubygems.org/gems/databasedotcom).
