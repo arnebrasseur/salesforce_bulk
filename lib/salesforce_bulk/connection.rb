@@ -123,7 +123,7 @@ module SalesforceBulk
 
     def _debug_response(response)
       return unless @debug
-      @debug << _xml_pp(response.body) << "\n"
+      @debug << _xml_pp(response.body.force_encoding('UTF-8')) << "\n"
     end
 
     def _xml_pp(xml)
